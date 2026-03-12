@@ -1,0 +1,35 @@
+{
+  "name": "glm-image-generator",
+  "version": "1.0.0",
+  "description": "Obsidian 插件 - 调用智谱 AI GLM 生成图片",
+  "main": "main.js",
+  "scripts": {
+    "build": "tsc && esbuild src/main.ts --bundle --outfile=main.js --format=iife --global-name=exports --target=chrome88 --external:obsidian",
+    "dev": "tsc --watch",
+    "lint": "eslint src --ext .ts",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "version": "node -e \"const fs=require('fs');const v=require('./package.json').version.split('.').map(Number);v[2]++;const n=v.join('.');fs.writeFileSync('package.json',JSON.stringify({...require('./package.json'),version:n},null,2));fs.writeFileSync('manifest.json',JSON.stringify({...require('./manifest.json'),version:n},null,2))\""
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "glm",
+    "image-generator"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "esbuild": "^0.20.0",
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "obsidian": "^1.12.3",
+    "ts-jest": "^29.1.2",
+    "typescript": "^5.3.3"
+  }
+}
