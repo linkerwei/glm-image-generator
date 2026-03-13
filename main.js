@@ -1,706 +1,160 @@
-const obsidian = require('obsidian');
-
-// 类型定义
-const MODELS = [
-  {
-    id: 'glm-image',
-    name: 'GLM-Image',
-    description: '智谱新旗舰图像生成模型，擅长文字渲染',
-    price: 0.1,
-    maxPromptLength: 1000,
-    features: ['文字渲染（海报、PPT、科普图）', '商业海报', '科普插画', '多格图画', '社交媒体图文']
-  },
-  {
-    id: 'cogView-4-250304',
-    name: 'CogView-4',
-    description: '支持生成汉字的开源文生图模型',
-    price: 0.1,
-    maxPromptLength: 1000,
-    features: ['中文文字生成', '餐饮美食宣传', '电商产品配图', '游戏素材创作', '文旅宣传制作']
-  }
-];
-
-const RESOLUTION_PRESETS = [
-  { label: '1:1 (1280x1280)', width: 1280, height: 1280, aspectRatio: '1:1' },
-  { label: '3:4 (1056x1568)', width: 1056, height: 1568, aspectRatio: '3:4' },
-  { label: '4:3 (1568x1056)', width: 1568, height: 1056, aspectRatio: '4:3' },
-  { label: '16:9 (1728x960)', width: 1728, height: 960, aspectRatio: '16:9' },
-  { label: '9:16 (960x1728)', width: 960, height: 1728, aspectRatio: '9:16' }
-];
-
-const DEFAULT_SETTINGS = {
-  apiKey: '',
-  defaultModel: 'glm-image',
-  defaultResolution: '1280x1280',
-  savePath: '附件/glm-images/',
-  autoInsert: true,
-  saveRemoteUrl: false,
-  historyLimit: 1000,
-  maxConcurrent: 3,
-  retryCount: 3,
-  costThreshold: 10
-};
-
-// 工具函数
-function calculateCost(model) {
-  const costs = {
-    'glm-image': 0.1,
-    'cogView-4-250304': 0.1
+"use strict";
+var exports = (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
+    get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
+  }) : x)(function(x) {
+    if (typeof require !== "undefined")
+      return require.apply(this, arguments);
+    throw Error('Dynamic require of "' + x + '" is not supported');
+  });
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
   };
-  return costs[model] || 0;
-}
-
-function generateFileName() {
-  const timestamp = Date.now();
-  const random = Math.random().toString(36).substring(2, 8);
-  return `glm-${timestamp}-${random}.png`;
-}
-
-function generateRecordId() {
-  const timestamp = Date.now();
-  const random = Math.random().toString(36).substring(2, 8);
-  return `${timestamp}-${random}`;
-}
-
-// GLM API Client
-class GLMApiClient {
-  constructor(apiKey) {
-    this.apiKey = apiKey;
-  }
-
-  setApiKey(apiKey) {
-    this.apiKey = apiKey;
-  }
-
-  async generateImage(request) {
-    const url = 'https://open.bigmodel.cn/api/paas/v4/images/generations';
-
-    const response = await this.request(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`
-      },
-      body: JSON.stringify({
-        model: request.model,
-        prompt: request.prompt,
-        size: request.size
-      })
-    });
-
-    return response;
-  }
-
-  async validateApiKey() {
-    if (!this.apiKey || this.apiKey.trim() === '') {
-      throw new Error('API Key 为空，请先输入');
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
     }
+    return to;
+  };
+  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-    console.log('[GLM API] 开始验证 API Key...');
-    console.log('[GLM API] API Key 长度:', this.apiKey.length);
-    console.log('[GLM API] API Key 前缀:', this.apiKey.substring(0, 10) + '...');
+  // src/main.ts
+  var main_exports = {};
+  __export(main_exports, {
+    default: () => GLMImageGeneratorPlugin
+  });
+  var import_obsidian2 = __require("obsidian");
 
-    try {
-      const url = 'https://open.bigmodel.cn/api/paas/v4/models';
-      console.log('[GLM API] 请求 URL:', url);
-
-      const response = await this.request(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`
-        }
-      });
-
-      console.log('[GLM API] 验证成功，响应:', response);
-      return true;
-    } catch (error) {
-      console.error('[GLM API] 验证失败，错误详情:', error);
-      console.error('[GLM API] 错误类型:', error.constructor.name);
-      console.error('[GLM API] 错误消息:', error.message);
-
-      if (error.message.includes('401') || error.message.includes('Unauthorized')) {
-        throw new Error('API Key 格式不正确或已过期');
-      } else if (error.message.includes('网络') || error.message.includes('连接')) {
-        throw new Error('网络连接失败，请检查网络设置');
-      } else if (error.message.includes('CORS') || error.message.includes('跨域')) {
-        throw new Error('跨域请求被阻止，可能需要配置代理');
-      } else {
-        throw new Error(`验证失败: ${error.message}`);
-      }
+  // src/types.ts
+  var MODELS = [
+    {
+      id: "glm-image",
+      name: "GLM-Image",
+      description: "\u667A\u8C31\u65B0\u65D7\u8230\u56FE\u50CF\u751F\u6210\u6A21\u578B\uFF0C\u64C5\u957F\u6587\u5B57\u6E32\u67D3",
+      price: 0.1,
+      maxPromptLength: 1e3,
+      features: [
+        "\u6587\u5B57\u6E32\u67D3\uFF08\u6D77\u62A5\u3001PPT\u3001\u79D1\u666E\u56FE\uFF09",
+        "\u5546\u4E1A\u6D77\u62A5",
+        "\u79D1\u666E\u63D2\u753B",
+        "\u591A\u683C\u56FE\u753B",
+        "\u793E\u4EA4\u5A92\u4F53\u56FE\u6587"
+      ]
+    },
+    {
+      id: "cogView-4-250304",
+      name: "CogView-4",
+      description: "\u652F\u6301\u751F\u6210\u6C49\u5B57\u7684\u5F00\u6E90\u6587\u751F\u56FE\u6A21\u578B",
+      price: 0.1,
+      maxPromptLength: 1e3,
+      features: [
+        "\u4E2D\u6587\u6587\u5B57\u751F\u6210",
+        "\u9910\u996E\u7F8E\u98DF\u5BA3\u4F20",
+        "\u7535\u5546\u4EA7\u54C1\u914D\u56FE",
+        "\u6E38\u620F\u7D20\u6750\u521B\u4F5C",
+        "\u6587\u65C5\u5BA3\u4F20\u5236\u4F5C"
+      ]
     }
-  }
-
-  async request(url, options, retryCount = 3) {
-    let lastError = null;
-
-    for (let i = 0; i < retryCount; i++) {
-      try {
-        const response = await this.makeRequest(url, options);
-
-        if (response.status >= 200 && response.status < 300) {
-          const data = JSON.parse(response.text);
-          if (data.error) {
-            throw new Error(data.error.message || 'API 调用失败');
-          }
-          return data;
-        }
-
-        if (response.status === 401) {
-          throw new Error('API Key 无效，请检查配置');
-        }
-        if (response.status === 403) {
-          throw new Error('权限不足，请检查 API Key 权限');
-        }
-        if (response.status === 429) {
-          const delay = Math.pow(2, i) * 1000;
-          await this.sleep(delay);
-          lastError = new Error('API 请求频率过高，请稍后重试');
-          continue;
-        }
-        if (response.status >= 500) {
-          const delay = Math.pow(2, i) * 1000;
-          await this.sleep(delay);
-          lastError = new Error(`服务器错误: ${response.status}`);
-          continue;
-        }
-
-        const errorData = response.text ? JSON.parse(response.text) : {};
-        throw new Error(errorData.error?.message || `请求失败: ${response.status}`);
-      } catch (error) {
-        if (error.message.includes('API Key') || error.message.includes('权限')) {
-          throw error;
-        }
-        lastError = error;
-
-        if (i < retryCount - 1) {
-          const delay = Math.pow(2, i) * 1000;
-          await this.sleep(delay);
-        }
-      }
-    }
-
-    throw lastError || new Error('请求失败');
-  }
-
-  makeRequest(url, options) {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open(options.method, url);
-
-      for (const [key, value] of Object.entries(options.headers)) {
-        xhr.setRequestHeader(key, value);
-      }
-
-      xhr.onload = () => {
-        resolve({
-          status: xhr.status,
-          text: xhr.responseText
-        });
-      };
-
-      xhr.onerror = () => {
-        reject(new Error('网络连接失败，请检查网络'));
-      };
-
-      if (options.body) {
-        xhr.send(options.body);
-      } else {
-        xhr.send();
-      }
-    });
-  }
-
-  sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-}
-
-// Image Downloader
-class ImageDownloader {
-  constructor(vault, savePath, maxRetries = 3) {
-    this.vault = vault;
-    this.savePath = savePath;
-    this.maxRetries = maxRetries;
-  }
-
-  setSavePath(savePath) {
-    this.savePath = savePath;
-  }
-
-  async downloadImage(imageUrl, customFileName) {
-    const fileName = customFileName || generateFileName();
-
-    // 确保路径格式正确
-    let savePath = this.savePath;
-    if (!savePath.endsWith('/')) {
-      savePath += '/';
-    }
-
-    const filePath = `${savePath}${fileName}`;
-
-    console.log('[下载] 开始下载图片');
-    console.log('[下载] 图片 URL:', imageUrl);
-    console.log('[下载] 保存路径:', filePath);
-    console.log('[下载] 目录路径:', savePath);
-
-    // 确保目录存在
-    try {
-      console.log('[下载] 检查目录是否存在...');
-      const adapter = this.vault.adapter;
-      const dirExists = await adapter.exists(savePath);
-
-      if (!dirExists) {
-        console.log('[下载] 目录不存在，开始创建:', savePath);
-        await this.vault.createFolder(savePath);
-        console.log('[下载] 目录创建成功');
-      } else {
-        console.log('[下载] 目录已存在');
-      }
-    } catch (error) {
-      console.error('[下载] 目录检查/创建失败:', error);
-      // 不要抛出错误，继续尝试保存
-    }
-
-    let lastError = null;
-
-    for (let i = 0; i < this.maxRetries; i++) {
-      try {
-        console.log(`[下载] 第 ${i + 1} 次尝试...`);
-        const imageData = await this.fetchImage(imageUrl);
-        console.log('[下载] 图片数据获取成功，大小:', imageData.byteLength, 'bytes');
-        await this.saveImage(filePath, imageData);
-        console.log('[下载] 图片保存成功:', filePath);
-        return filePath;
-      } catch (error) {
-        console.error(`[下载] 第 ${i + 1} 次失败:`, error);
-        lastError = error;
-
-        if (i < this.maxRetries - 1) {
-          const delay = Math.pow(2, i) * 1000;
-          console.log(`[下载] 等待 ${delay}ms 后重试...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-      }
-    }
-
-    console.error('[下载] 所有重试均失败');
-    throw lastError || new Error('图片下载失败');
-  }
-
-  async fetchImage(url) {
-    console.log('[下载] 开始 fetch:', url);
-    console.log('[下载] 使用 Obsidian requestUrl API (绕过 CORS)');
-
-    try {
-      // 使用 Obsidian 的 requestUrl API，可以绑过 CORS 限制
-      const response = await obsidian.requestUrl({
-        url: url,
-        method: 'GET',
-        arrayBuffer: true  // 以二进制形式返回
-      });
-
-      console.log('[下载] requestUrl 状态:', response.status);
-      console.log('[下载] 响应大小:', response.arrayBuffer.byteLength, 'bytes');
-
-      if (response.status >= 200 && response.status < 300) {
-        return response.arrayBuffer;
-      } else {
-        throw new Error(`下载失败: HTTP ${response.status}`);
-      }
-    } catch (error) {
-      console.error('[下载] requestUrl 错误:', error);
-      throw new Error(`图片下载失败: ${error.message}`);
-    }
-  }
-
-  async saveImage(filePath, data) {
-    console.log('[下载] 保存图片到:', filePath);
-    try {
-      const uint8Array = new Uint8Array(data);
-      console.log('[下载] 数据大小:', uint8Array.length, 'bytes');
-      await this.vault.createBinary(filePath, uint8Array);
-      console.log('[下载] 保存成功');
-    } catch (error) {
-      console.error('[下载] 保存失败:', error);
-      throw error;
-    }
-  }
-}
-
-// Image Generator
-class ImageGenerator {
-  constructor(vault, apiClient, downloader, settings) {
-    this.vault = vault;
-    this.apiClient = apiClient;
-    this.downloader = downloader;
-    this.settings = settings;
-  }
-
-  updateSettings(settings) {
-    this.settings = settings;
-    this.downloader.setSavePath(settings.savePath);
-  }
-
-  async generateImage(prompt, model, size) {
-    console.log('[生成器] 开始生成图片');
-    console.log('[生成器] 提示词:', prompt);
-    console.log('[生成器] 模型:', model);
-    console.log('[生成器] 尺寸:', size);
-
-    const finalModel = model || this.settings.defaultModel;
-    const finalSize = size || this.settings.defaultResolution;
-
-    console.log('[生成器] 调用 API...');
-    const response = await this.apiClient.generateImage({
-      model: finalModel,
-      prompt,
-      size: finalSize
-    });
-
-    console.log('[生成器] API 响应:', response);
-    const imageUrl = response.data[0]?.url;
-    console.log('[生成器] 图片 URL:', imageUrl);
-
-    if (!imageUrl) {
-      console.error('[生成器] 未获取到图片 URL');
-      throw new Error('未获取到图片 URL');
-    }
-
-    console.log('[生成器] 开始下载图片...');
-    const localPath = await this.downloader.downloadImage(imageUrl);
-    console.log('[生成器] 图片下载完成:', localPath);
-
-    return {
-      localPath,
-      remoteUrl: imageUrl
+  ];
+  var RESOLUTION_PRESETS = [
+    { label: "1:1 (1280x1280)", width: 1280, height: 1280, aspectRatio: "1:1" },
+    { label: "3:4 (1056x1568)", width: 1056, height: 1568, aspectRatio: "3:4" },
+    { label: "4:3 (1568x1056)", width: 1568, height: 1056, aspectRatio: "4:3" },
+    { label: "16:9 (1728x960)", width: 1728, height: 960, aspectRatio: "16:9" },
+    { label: "9:16 (960x1728)", width: 960, height: 1728, aspectRatio: "9:16" }
+  ];
+  var DEFAULT_SETTINGS = {
+    apiKey: "",
+    defaultModel: "glm-image",
+    defaultResolution: "1280x1280",
+    savePath: "\u9644\u4EF6/glm-images/",
+    autoInsert: true,
+    saveRemoteUrl: false,
+    historyLimit: 1e3,
+    maxConcurrent: 3,
+    retryCount: 3,
+    costThreshold: 10
+  };
+  function calculateCost(model) {
+    const costs = {
+      "glm-image": 0.1,
+      "cogView-4-250304": 0.1
     };
+    return costs[model] || 0;
+  }
+  function generateFileName() {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 8);
+    return `glm-${timestamp}-${random}.png`;
+  }
+  function generateRecordId() {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 8);
+    return `${timestamp}-${random}`;
+  }
+  function getTodayDate() {
+    return (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
   }
 
-  async validateApiKey() {
-    return this.apiClient.validateApiKey();
-  }
-
-  getSettings() {
-    return this.settings;
-  }
-}
-
-// Generator Modal - 修复版本
-class GeneratorModal extends obsidian.Modal {
-  constructor(app, generator, settings, onSuccess, onCloseCallback) {
-    super(app);
-    this.generator = generator;
-    this.settings = settings;
-    this.model = settings.defaultModel;
-    this.resolution = settings.defaultResolution;
-    this.autoInsert = settings.autoInsert;
-    this.onSuccess = onSuccess;
-    this.onCloseCallback = onCloseCallback;
-    this.prompt = '';
-    this.isGenerating = false;
-  }
-
-  onOpen() {
-    console.log('[Modal] onOpen 被调用');
-    this.display();
-  }
-
-  display() {
-    console.log('[Modal] display 开始渲染');
-    const { contentEl } = this;
-    contentEl.empty();
-
-    contentEl.createEl('h2', { text: 'GLM 图片生成', cls: 'glm-modal-title' });
-
-    // 提示词输入
-    const promptLabel = contentEl.createEl('label', {
-      text: '提示词 *',
-      cls: 'glm-form-label'
-    });
-
-    this.promptTextarea = contentEl.createEl('textarea', {
-      cls: 'glm-textarea',
-      attr: {
-        placeholder: '描述你想生成的图片...',
-        rows: 4
-      }
-    });
-
-    this.promptTextarea.addEventListener('input', () => {
-      this.prompt = this.promptTextarea.value;
-      this.updateCharCount();
-      this.validateForm();
-    });
-
-    this.charCountEl = contentEl.createEl('div', { cls: 'glm-char-count' });
-    this.updateCharCount();
-
-    // 模型选择
-    contentEl.createEl('label', { text: '模型', cls: 'glm-form-label' });
-    new obsidian.Setting(contentEl).addDropdown((dropdown) => {
-      MODELS.forEach((model) => {
-        dropdown.addOption(model.id, `${model.name} (${model.price}元/次)`);
-      });
-      dropdown.setValue(this.model);
-      dropdown.onChange((value) => {
-        this.model = value;
-      });
-    });
-
-    // 分辨率选择
-    contentEl.createEl('label', { text: '分辨率', cls: 'glm-form-label' });
-    new obsidian.Setting(contentEl).addDropdown((dropdown) => {
-      RESOLUTION_PRESETS.forEach((preset) => {
-        dropdown.addOption(`${preset.width}x${preset.height}`, preset.label);
-      });
-      dropdown.setValue(this.resolution);
-      dropdown.onChange((value) => {
-        this.resolution = value;
-      });
-    });
-
-    // 自动插入选项
-    new obsidian.Setting(contentEl)
-      .setName('生成后自动插入到文档')
-      .addToggle((toggle) => {
-        toggle.setValue(this.autoInsert);
-        toggle.onChange((value) => {
-          this.autoInsert = value;
+  // src/ui/settings-tab.ts
+  var import_obsidian = __require("obsidian");
+  var SettingsTab = class extends import_obsidian.PluginSettingTab {
+    constructor(app, plugin, generator) {
+      super(app, plugin);
+      this.plugin = plugin;
+      this.generator = generator;
+    }
+    display() {
+      const { containerEl } = this;
+      containerEl.empty();
+      containerEl.createEl("h2", { text: "GLM \u56FE\u7247\u751F\u6210\u5668\u8BBE\u7F6E" });
+      containerEl.createEl("h3", { text: "API \u914D\u7F6E" });
+      new import_obsidian.Setting(containerEl).setName("API Key").setDesc("\u667A\u8C31 AI API Key").addText((text) => {
+        text.setPlaceholder("\u8F93\u5165 API Key").setValue(this.plugin.settings.apiKey).onChange(async (value) => {
+          this.plugin.settings.apiKey = value;
+          await this.plugin.saveSettings();
         });
-      });
-
-    this.statusEl = contentEl.createEl('div', { cls: 'glm-status' });
-    this.previewContainer = contentEl.createEl('div', { cls: 'glm-preview-container' });
-
-    // 按钮
-    const buttonContainer = contentEl.createEl('div', { cls: 'glm-button-container' });
-
-    buttonContainer.createEl('button', {
-      text: '取消',
-      cls: 'glm-btn glm-btn-secondary'
-    }).addEventListener('click', () => {
-      this.close();
-    });
-
-    this.generateBtn = buttonContainer.createEl('button', {
-      text: '生成图片',
-      cls: 'glm-btn glm-btn-primary'
-    });
-
-    this.generateBtn.addEventListener('click', () => {
-      this.generateImage();
-    });
-
-    this.validateForm();
-    console.log('[Modal] display 渲染完成');
-  }
-
-  updateCharCount() {
-    if (!this.charCountEl) return;
-    const currentLength = this.prompt.length;
-    this.charCountEl.textContent = `${currentLength}/1000 字符`;
-
-    if (currentLength > 1000) {
-      this.charCountEl.addClass('glm-char-count-error');
-    } else {
-      this.charCountEl.removeClass('glm-char-count-error');
-    }
-  }
-
-  validateForm() {
-    if (!this.generateBtn) return;
-    const isValid = this.prompt.trim().length > 0 && this.prompt.length <= 1000;
-    this.generateBtn.disabled = !isValid || this.isGenerating;
-  }
-
-  async generateImage() {
-    if (this.isGenerating) return;
-
-    if (!this.settings.apiKey) {
-      new obsidian.Notice('请先配置 API Key');
-      return;
-    }
-
-    console.log('[Modal] ========== 开始生成图片 ==========');
-    console.log('[Modal] 提示词:', this.prompt);
-    console.log('[Modal] 模型:', this.model);
-    console.log('[Modal] 分辨率:', this.resolution);
-
-    this.isGenerating = true;
-    this.generateBtn.disabled = true;
-    this.generateBtn.textContent = '生成中...';
-    this.updateStatus('正在生成图片，请稍候...');
-    this.previewContainer.empty();
-
-    try {
-      console.log('[Modal] 调用 generator.generateImage...');
-      const result = await this.generator.generateImage(
-        this.prompt,
-        this.model,
-        this.resolution
-      );
-
-      console.log('[Modal] 生成结果:', result);
-      this.updateStatus('生成成功！');
-
-      const previewEl = this.previewContainer.createEl('div', { cls: 'glm-preview' });
-
-      try {
-        const file = this.app.vault.getFileByPath(result.localPath);
-        if (file) {
-          const blob = await this.app.vault.readBinary(file);
-          const blobUrl = URL.createObjectURL(new Blob([blob], { type: 'image/png' }));
-          previewEl.createEl('img', {
-            attr: { src: blobUrl },
-            cls: 'glm-preview-image'
-          });
-        }
-      } catch (e) {
-        console.error('[Modal] 预览图片失败:', e);
-        previewEl.createEl('p', { text: '图片已保存到: ' + result.localPath });
-      }
-
-      const actionContainer = this.previewContainer.createEl('div', { cls: 'glm-action-buttons' });
-
-      actionContainer.createEl('button', {
-        text: '插入到文档',
-        cls: 'glm-btn glm-btn-primary'
-      }).addEventListener('click', () => {
-        this.insertToDocument(result.localPath);
-        this.close();
-      });
-
-      actionContainer.createEl('button', {
-        text: '关闭',
-        cls: 'glm-btn glm-btn-secondary'
-      }).addEventListener('click', () => {
-        this.close();
-      });
-
-      console.log('[Modal] ========== 生成成功 ==========');
-
-    } catch (error) {
-      console.error('[Modal] ========== 生成失败 ==========');
-      console.error('[Modal] 错误对象:', error);
-      console.error('[Modal] 错误消息:', error.message);
-      console.error('[Modal] 错误堆栈:', error.stack);
-
-      const errorMessage = error.message || '生成失败';
-      this.updateStatus(`生成失败: ${errorMessage}`, true);
-      new obsidian.Notice('生成失败: ' + errorMessage, 8000);
-    } finally {
-      this.isGenerating = false;
-      this.generateBtn.disabled = false;
-      this.generateBtn.textContent = '生成图片';
-    }
-  }
-
-  updateStatus(message, isError = false) {
-    if (!this.statusEl) return;
-    this.statusEl.textContent = message;
-    if (isError) {
-      this.statusEl.addClass('glm-status-error');
-    } else {
-      this.statusEl.removeClass('glm-status-error');
-    }
-  }
-
-  insertToDocument(imagePath) {
-    const imageMarkdown = `![${this.prompt.slice(0, 50)}](${imagePath})`;
-
-    const activeEditor = this.app.workspace.activeEditor;
-    if (activeEditor && activeEditor.editor) {
-      activeEditor.editor.replaceSelection(imageMarkdown + '\n');
-      new obsidian.Notice('图片已插入到文档');
-    } else {
-      new obsidian.Notice('未找到活动编辑器');
-    }
-  }
-
-  onClose() {
-    if (this.onCloseCallback) this.onCloseCallback();
-    super.onClose();
-  }
-}
-
-// Settings Tab
-class SettingsTab extends obsidian.PluginSettingTab {
-  constructor(app, plugin, generator) {
-    super(app, plugin);
-    this.plugin = plugin;
-    this.generator = generator;
-  }
-
-  display() {
-    const { containerEl } = this;
-    containerEl.empty();
-
-    containerEl.createEl('h2', { text: 'GLM 图片生成器设置' });
-
-    // API 配置
-    containerEl.createEl('h3', { text: 'API 配置' });
-
-    new obsidian.Setting(containerEl)
-      .setName('API Key')
-      .setDesc('智谱 AI API Key')
-      .addText((text) => {
-        text
-          .setPlaceholder('输入 API Key')
-          .setValue(this.plugin.settings.apiKey)
-          .onChange(async (value) => {
-            this.plugin.settings.apiKey = value;
-            await this.plugin.saveSettings();
-          });
-        text.inputEl.type = 'password';
-      })
-      .addButton((button) => {
-        button.setButtonText('验证');
+        text.inputEl.type = "password";
+      }).addButton((button) => {
+        button.setButtonText("\u9A8C\u8BC1");
         button.onClick(async () => {
           if (!this.plugin.settings.apiKey) {
-            new obsidian.Notice('请先输入 API Key');
+            new import_obsidian.Notice("\u8BF7\u5148\u8F93\u5165 API Key");
             return;
           }
-          button.setButtonText('验证中...');
+          button.setButtonText("\u9A8C\u8BC1\u4E2D...");
           button.setDisabled(true);
           try {
-            console.log('[设置] 开始验证 API Key:', this.plugin.settings.apiKey.substring(0, 10) + '...');
             const isValid = await this.generator.validateApiKey();
-            console.log('[设置] 验证结果:', isValid);
             if (isValid) {
-              new obsidian.Notice('✅ API Key 验证成功！');
-              button.setButtonText('✓ 已验证');
+              new import_obsidian.Notice("API Key \u9A8C\u8BC1\u6210\u529F");
             } else {
-              new obsidian.Notice('❌ API Key 无效或网络错误，请检查控制台查看详情', 5000);
-              button.setButtonText('重新验证');
+              new import_obsidian.Notice("API Key \u65E0\u6548");
             }
           } catch (error) {
-            console.error('[设置] 验证异常:', error);
-            const errorMsg = error.message || error.toString() || '未知错误';
-            new obsidian.Notice(`❌ 验证失败: ${errorMsg}`, 8000);
-            button.setButtonText('重新验证');
+            new import_obsidian.Notice("\u9A8C\u8BC1\u5931\u8D25: " + (error instanceof Error ? error.message : "\u672A\u77E5\u9519\u8BEF"));
           }
+          button.setButtonText("\u9A8C\u8BC1");
           button.setDisabled(false);
         });
       });
-
-    new obsidian.Setting(containerEl)
-      .setName('获取 API Key')
-      .setDesc('点击打开智谱 AI 控制台')
-      .addButton((button) => {
-        button.setButtonText('打开智谱 AI 控制台');
+      new import_obsidian.Setting(containerEl).setName("\u83B7\u53D6 API Key").setDesc("\u70B9\u51FB\u6253\u5F00\u667A\u8C31 AI \u63A7\u5236\u53F0").addButton((button) => {
+        button.setButtonText("\u6253\u5F00\u667A\u8C31 AI \u63A7\u5236\u53F0");
         button.onClick(() => {
-          window.open('https://open.bigmodel.cn/', '_blank');
+          window.open("https://open.bigmodel.cn/", "_blank");
         });
       });
-
-    // 默认设置
-    containerEl.createEl('h3', { text: '默认设置' });
-
-    new obsidian.Setting(containerEl)
-      .setName('默认模型')
-      .addDropdown((dropdown) => {
+      containerEl.createEl("h3", { text: "\u9ED8\u8BA4\u8BBE\u7F6E" });
+      new import_obsidian.Setting(containerEl).setName("\u9ED8\u8BA4\u6A21\u578B").addDropdown((dropdown) => {
         MODELS.forEach((model) => {
-          dropdown.addOption(model.id, `${model.name} (${model.price}元/次)`);
+          dropdown.addOption(model.id, `${model.name} (${model.price}\u5143/\u6B21)`);
         });
         dropdown.setValue(this.plugin.settings.defaultModel);
         dropdown.onChange(async (value) => {
@@ -709,10 +163,7 @@ class SettingsTab extends obsidian.PluginSettingTab {
           this.generator.updateSettings(this.plugin.settings);
         });
       });
-
-    new obsidian.Setting(containerEl)
-      .setName('默认分辨率')
-      .addDropdown((dropdown) => {
+      new import_obsidian.Setting(containerEl).setName("\u9ED8\u8BA4\u5206\u8FA8\u7387").addDropdown((dropdown) => {
         RESOLUTION_PRESETS.forEach((preset) => {
           dropdown.addOption(`${preset.width}x${preset.height}`, preset.label);
         });
@@ -723,11 +174,8 @@ class SettingsTab extends obsidian.PluginSettingTab {
           this.generator.updateSettings(this.plugin.settings);
         });
       });
-
-    new obsidian.Setting(containerEl)
-      .setName('图片保存路径')
-      .addText((text) => {
-        text.setPlaceholder('附件/glm-images/');
+      new import_obsidian.Setting(containerEl).setName("\u56FE\u7247\u4FDD\u5B58\u8DEF\u5F84").addText((text) => {
+        text.setPlaceholder("\u9644\u4EF6/glm-images/");
         text.setValue(this.plugin.settings.savePath);
         text.onChange(async (value) => {
           this.plugin.settings.savePath = value || DEFAULT_SETTINGS.savePath;
@@ -735,24 +183,46 @@ class SettingsTab extends obsidian.PluginSettingTab {
           this.generator.updateSettings(this.plugin.settings);
         });
       });
-
-    new obsidian.Setting(containerEl)
-      .setName('生成后自动插入到文档')
-      .addToggle((toggle) => {
+      new import_obsidian.Setting(containerEl).setName("\u751F\u6210\u540E\u81EA\u52A8\u63D2\u5165\u5230\u6587\u6863").addToggle((toggle) => {
         toggle.setValue(this.plugin.settings.autoInsert);
         toggle.onChange(async (value) => {
           this.plugin.settings.autoInsert = value;
           await this.plugin.saveSettings();
         });
       });
-
-    // 历史记录
-    containerEl.createEl('h3', { text: '历史记录' });
-
-    new obsidian.Setting(containerEl)
-      .setName('历史记录上限')
-      .addText((text) => {
-        text.setPlaceholder('1000');
+      containerEl.createEl("h3", { text: "\u9AD8\u7EA7\u8BBE\u7F6E" });
+      new import_obsidian.Setting(containerEl).setName("\u6279\u91CF\u751F\u6210\u5E76\u53D1\u6570").setDesc("\u540C\u65F6\u751F\u6210\u7684\u6700\u5927\u56FE\u7247\u6570\u91CF").addSlider((slider) => {
+        slider.setLimits(1, 5, 1);
+        slider.setValue(this.plugin.settings.maxConcurrent);
+        slider.onChange(async (value) => {
+          this.plugin.settings.maxConcurrent = value;
+          await this.plugin.saveSettings();
+        });
+        slider.sliderEl.style.width = "100px";
+      });
+      new import_obsidian.Setting(containerEl).setName("\u91CD\u8BD5\u6B21\u6570").setDesc("API \u8C03\u7528\u5931\u8D25\u65F6\u7684\u91CD\u8BD5\u6B21\u6570").addSlider((slider) => {
+        slider.setLimits(1, 5, 1);
+        slider.setValue(this.plugin.settings.retryCount);
+        slider.onChange(async (value) => {
+          this.plugin.settings.retryCount = value;
+          await this.plugin.saveSettings();
+        });
+        slider.sliderEl.style.width = "100px";
+      });
+      new import_obsidian.Setting(containerEl).setName("\u6210\u672C\u9884\u8B66\u9608\u503C").setDesc("\u5355\u65E5\u7D2F\u8BA1\u6210\u672C\u8D85\u8FC7\u6B64\u503C\u65F6\u63D0\u9192\uFF08\u5143\uFF09").addText((text) => {
+        text.setPlaceholder("10");
+        text.setValue(String(this.plugin.settings.costThreshold));
+        text.onChange(async (value) => {
+          const num = parseFloat(value);
+          if (!isNaN(num) && num >= 0) {
+            this.plugin.settings.costThreshold = num;
+            await this.plugin.saveSettings();
+          }
+        });
+      });
+      containerEl.createEl("h3", { text: "\u5386\u53F2\u8BB0\u5F55" });
+      new import_obsidian.Setting(containerEl).setName("\u5386\u53F2\u8BB0\u5F55\u4E0A\u9650").addText((text) => {
+        text.setPlaceholder("1000");
         text.setValue(String(this.plugin.settings.historyLimit));
         text.onChange(async (value) => {
           const num = parseInt(value, 10);
@@ -762,111 +232,499 @@ class SettingsTab extends obsidian.PluginSettingTab {
           }
         });
       });
-  }
-}
-
-// Main Plugin Class
-class GLMImageGeneratorPlugin extends obsidian.Plugin {
-  async onload() {
-    console.log('GLM Image Generator 插件加载中...');
-
-    // 加载设置
-    await this.loadSettings();
-
-    // 初始化组件
-    const apiClient = new GLMApiClient(this.settings.apiKey);
-    const downloader = new ImageDownloader(this.app.vault, this.settings.savePath, this.settings.retryCount);
-    this.generator = new ImageGenerator(this.app.vault, apiClient, downloader, this.settings);
-
-    // 注册设置面板
-    this.addSettingTab(new SettingsTab(this.app, this, this.generator));
-
-    // 注册命令
-    this.addCommand({
-      id: 'glm-generate-image',
-      name: '生成图片',
-      callback: () => {
-        console.log('[插件] 打开生成图片 Modal');
-        new GeneratorModal(this.app, this.generator, this.settings).open();
-      }
-    });
-
-    this.addCommand({
-      id: 'glm-test-api-key',
-      name: '测试 API Key 连接',
-      callback: async () => {
-        if (!this.settings.apiKey) {
-          new obsidian.Notice('请先在设置中配置 API Key');
-          return;
-        }
-
-        new obsidian.Notice('正在测试 API Key...', 3000);
-
-        try {
-          console.log('=== 开始测试 API Key ===');
-          console.log('API Key (前10位):', this.settings.apiKey.substring(0, 10) + '...');
-          console.log('API Key 长度:', this.settings.apiKey.length);
-
-          const isValid = await this.generator.validateApiKey();
-
-          if (isValid) {
-            new obsidian.Notice('✅ API Key 有效！连接成功', 5000);
-            console.log('=== API Key 测试成功 ===');
-          } else {
-            new obsidian.Notice('❌ API Key 无效，请检查控制台查看详细错误', 8000);
-            console.log('=== API Key 测试失败 ===');
+      const history = this.generator.getSettings();
+      containerEl.createEl("p", {
+        text: `\u5F53\u524D\u8BB0\u5F55\u6570: ${history.historyLimit} \u6761`,
+        cls: "setting-item-description"
+      });
+      new import_obsidian.Setting(containerEl).setName("\u6E05\u7A7A\u5386\u53F2\u8BB0\u5F55").addButton((button) => {
+        button.setButtonText("\u6E05\u7A7A");
+        button.onClick(async () => {
+          if (confirm("\u786E\u5B9A\u8981\u6E05\u7A7A\u6240\u6709\u5386\u53F2\u8BB0\u5F55\u5417\uFF1F\u6B64\u64CD\u4F5C\u4E0D\u53EF\u6062\u590D\u3002")) {
+            new import_obsidian.Notice("\u5386\u53F2\u8BB0\u5F55\u5DF2\u6E05\u7A7A");
           }
-        } catch (error) {
-          console.error('=== API Key 测试异常 ===');
-          console.error('错误对象:', error);
-          console.error('错误消息:', error.message);
-          console.error('错误堆栈:', error.stack);
-
-          new obsidian.Notice(`❌ 测试失败: ${error.message}`, 10000);
-        }
-      }
-    });
-
-    this.addCommand({
-      id: 'glm-generate-from-clipboard',
-      name: '从剪贴板生成图片',
-      callback: async () => {
-        try {
-          const clipboardText = await navigator.clipboard.readText();
-          if (!clipboardText || clipboardText.trim().length === 0) {
-            new obsidian.Notice('剪贴板为空');
-            return;
-          }
-
-          if (!this.settings.apiKey) {
-            new obsidian.Notice('请先配置 API Key');
-            return;
-          }
-
-          new GeneratorModal(this.app, this.generator, this.settings).open();
-        } catch (error) {
-          new obsidian.Notice('读取剪贴板失败: ' + error.message);
-        }
-      }
-    });
-
-    console.log('GLM Image Generator 插件加载完成');
-  }
-
-  onunload() {
-    console.log('GLM Image Generator 插件已卸载');
-  }
-
-  async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-  }
-
-  async saveSettings() {
-    await this.saveData(this.settings);
-    if (this.generator) {
-      this.generator.updateSettings(this.settings);
+        });
+      });
+      containerEl.createEl("h3", { text: "\u6210\u672C\u7EDF\u8BA1" });
+      this.displayStatistics(containerEl);
+      new import_obsidian.Setting(containerEl).setName("\u5BFC\u51FA\u7EDF\u8BA1\u6570\u636E").addButton((button) => {
+        button.setButtonText("\u5BFC\u51FA CSV");
+        button.onClick(() => {
+          new import_obsidian.Notice("\u5BFC\u51FA\u529F\u80FD\u5F00\u53D1\u4E2D");
+        });
+      });
     }
-  }
-}
+    displayStatistics(containerEl) {
+      containerEl.createEl("p", {
+        text: "\u603B\u8C03\u7528\u6B21\u6570: 0 \u6B21",
+        cls: "setting-item-description"
+      });
+      containerEl.createEl("p", {
+        text: "\u603B\u6210\u672C: \xA50.00",
+        cls: "setting-item-description"
+      });
+    }
+  };
 
-module.exports = GLMImageGeneratorPlugin;
+  // src/services/glm-api-client.ts
+  var API_BASE_URL = "https://open.bigmodel.cn/api/paas/v4";
+  var GLMApiClient = class {
+    constructor(apiKey) {
+      this.apiKey = apiKey;
+    }
+    setApiKey(apiKey) {
+      this.apiKey = apiKey;
+    }
+    async generateImage(request) {
+      const url = `${API_BASE_URL}/images/generations`;
+      const response = await this.request(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify({
+          model: request.model,
+          prompt: request.prompt,
+          size: request.size
+        })
+      });
+      return response;
+    }
+    async validateApiKey() {
+      try {
+        const url = `${API_BASE_URL}/models`;
+        await this.request(url, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`
+          }
+        });
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+    async request(url, options, retryCount = 3) {
+      var _a;
+      let lastError = null;
+      for (let i = 0; i < retryCount; i++) {
+        try {
+          const response = await this.makeRequest(url, options);
+          if (response.status >= 200 && response.status < 300) {
+            const data = JSON.parse(response.text);
+            if (data.error) {
+              throw new Error(data.error.message || "API \u8C03\u7528\u5931\u8D25");
+            }
+            return data;
+          }
+          if (response.status === 401) {
+            throw new Error("API Key \u65E0\u6548\uFF0C\u8BF7\u68C0\u67E5\u914D\u7F6E");
+          }
+          if (response.status === 403) {
+            throw new Error("\u6743\u9650\u4E0D\u8DB3\uFF0C\u8BF7\u68C0\u67E5 API Key \u6743\u9650");
+          }
+          if (response.status === 429) {
+            const delay = Math.pow(2, i) * 1e3;
+            await this.sleep(delay);
+            lastError = new Error("API \u8BF7\u6C42\u9891\u7387\u8FC7\u9AD8\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5");
+            continue;
+          }
+          if (response.status >= 500) {
+            const delay = Math.pow(2, i) * 1e3;
+            await this.sleep(delay);
+            lastError = new Error(`\u670D\u52A1\u5668\u9519\u8BEF: ${response.status}`);
+            continue;
+          }
+          const errorData = response.text ? JSON.parse(response.text) : {};
+          throw new Error(((_a = errorData.error) == null ? void 0 : _a.message) || `\u8BF7\u6C42\u5931\u8D25: ${response.status}`);
+        } catch (error) {
+          if (error instanceof Error) {
+            if (error.message.includes("API Key") || error.message.includes("\u6743\u9650")) {
+              throw error;
+            }
+            lastError = error;
+          } else {
+            lastError = new Error("\u672A\u77E5\u9519\u8BEF");
+          }
+          if (i < retryCount - 1) {
+            const delay = Math.pow(2, i) * 1e3;
+            await this.sleep(delay);
+          }
+        }
+      }
+      throw lastError || new Error("\u8BF7\u6C42\u5931\u8D25");
+    }
+    makeRequest(url, options) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open(options.method, url);
+        for (const [key, value] of Object.entries(options.headers)) {
+          xhr.setRequestHeader(key, value);
+        }
+        xhr.onload = () => {
+          resolve({
+            status: xhr.status,
+            text: xhr.responseText
+          });
+        };
+        xhr.onerror = () => {
+          reject(new Error("\u7F51\u7EDC\u8FDE\u63A5\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC"));
+        };
+        if (options.body) {
+          xhr.send(options.body);
+        } else {
+          xhr.send();
+        }
+      });
+    }
+    sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+  };
+
+  // src/services/image-downloader.ts
+  var ImageDownloader = class {
+    constructor(vault, savePath, maxRetries = 3) {
+      this.vault = vault;
+      this.savePath = savePath;
+      this.maxRetries = maxRetries;
+    }
+    setSavePath(savePath) {
+      this.savePath = savePath;
+    }
+    async downloadImage(imageUrl, customFileName) {
+      await this.ensureDirectoryExists(this.savePath);
+      const fileName = customFileName || generateFileName();
+      const filePath = `${this.savePath}${fileName}`;
+      let lastError = null;
+      for (let i = 0; i < this.maxRetries; i++) {
+        try {
+          const imageData = await this.fetchImage(imageUrl);
+          await this.saveImage(filePath, imageData);
+          return filePath;
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error("\u4E0B\u8F7D\u5931\u8D25");
+          if (i < this.maxRetries - 1) {
+            const delay = Math.pow(2, i) * 1e3;
+            await this.sleep(delay);
+          }
+        }
+      }
+      throw lastError || new Error("\u56FE\u7247\u4E0B\u8F7D\u5931\u8D25");
+    }
+    async fetchImage(url) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("GET", url, true);
+        xhr.responseType = "arraybuffer";
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(xhr.response);
+          } else {
+            reject(new Error(`\u4E0B\u8F7D\u5931\u8D25: ${xhr.status}`));
+          }
+        };
+        xhr.onerror = () => {
+          reject(new Error("\u7F51\u7EDC\u8FDE\u63A5\u5931\u8D25"));
+        };
+        xhr.send();
+      });
+    }
+    async saveImage(filePath, data) {
+      const uint8Array = new Uint8Array(data);
+      await this.vault.createBinary(filePath, uint8Array);
+    }
+    async ensureDirectoryExists(dirPath) {
+      try {
+        const existingFiles = this.vault.getFiles();
+        const dirExists = existingFiles.some(
+          (f) => f.path === dirPath || f.path.startsWith(dirPath)
+        );
+        if (!dirExists) {
+          await this.vault.create("", dirPath + ".placeholder");
+        }
+      } catch (error) {
+      }
+    }
+    async deleteImage(filePath) {
+      try {
+        const file = this.vault.getFile(filePath);
+        if (file) {
+          await this.vault.delete(file);
+        }
+      } catch (error) {
+      }
+    }
+    sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+  };
+
+  // src/services/history-manager.ts
+  var HistoryManager = class {
+    constructor(vault, historyPath, settings) {
+      this.vault = vault;
+      this.historyPath = historyPath;
+      this.settings = settings;
+      this.historyData = { records: [] };
+    }
+    async load() {
+      try {
+        const file = this.vault.getFile(this.historyPath);
+        if (file) {
+          const content = await this.vault.read(file);
+          this.historyData = JSON.parse(content);
+        }
+      } catch (error) {
+        this.historyData = { records: [] };
+      }
+    }
+    async save() {
+      await this.ensureHistoryFileExists();
+      const file = this.vault.getFile(this.historyPath);
+      if (file) {
+        await this.vault.modify(file, JSON.stringify(this.historyData, null, 2));
+      } else {
+        await this.vault.create(this.historyPath, JSON.stringify(this.historyData, null, 2));
+      }
+    }
+    async ensureHistoryFileExists() {
+      try {
+        const file = this.vault.getFile(this.historyPath);
+        if (!file) {
+          await this.vault.create(this.historyPath, JSON.stringify({ records: [] }, null, 2));
+        }
+      } catch (error) {
+        await this.vault.create(this.historyPath, JSON.stringify({ records: [] }, null, 2));
+      }
+    }
+    async addRecord(prompt, model, size, localPath, remoteUrl, status, errorMessage) {
+      const record = {
+        id: generateRecordId(),
+        prompt,
+        model,
+        size,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        localPath,
+        remoteUrl: status === "success" ? remoteUrl : void 0,
+        cost: status === "success" ? calculateCost(model) : 0,
+        status,
+        errorMessage
+      };
+      this.historyData.records.unshift(record);
+      if (this.historyData.records.length > this.settings.historyLimit) {
+        this.historyData.records = this.historyData.records.slice(
+          0,
+          this.settings.historyLimit
+        );
+      }
+      await this.save();
+      return record;
+    }
+    getRecords() {
+      return this.historyData.records;
+    }
+    getRecordById(id) {
+      return this.historyData.records.find((r) => r.id === id);
+    }
+    async deleteRecord(id) {
+      this.historyData.records = this.historyData.records.filter((r) => r.id !== id);
+      await this.save();
+    }
+    async clearHistory() {
+      this.historyData.records = [];
+      await this.save();
+    }
+    searchRecords(query) {
+      const lowerQuery = query.toLowerCase();
+      return this.historyData.records.filter(
+        (r) => r.prompt.toLowerCase().includes(lowerQuery)
+      );
+    }
+    filterByModel(model) {
+      return this.historyData.records.filter((r) => r.model === model);
+    }
+    getStatistics() {
+      const stats = {
+        totalCalls: 0,
+        totalCost: 0,
+        byModel: {},
+        byDate: {}
+      };
+      const today = getTodayDate();
+      for (const record of this.historyData.records) {
+        if (record.status === "success") {
+          stats.totalCalls++;
+          stats.totalCost += record.cost;
+          if (!stats.byModel[record.model]) {
+            stats.byModel[record.model] = { calls: 0, cost: 0 };
+          }
+          stats.byModel[record.model].calls++;
+          stats.byModel[record.model].cost += record.cost;
+          const date = record.timestamp.split("T")[0];
+          if (!stats.byDate[date]) {
+            stats.byDate[date] = { calls: 0, cost: 0 };
+          }
+          stats.byDate[date].calls++;
+          stats.byDate[date].cost += record.cost;
+        }
+      }
+      return stats;
+    }
+    updateSettings(settings) {
+      this.settings = settings;
+    }
+  };
+
+  // src/services/image-generator.ts
+  var ImageGenerator = class {
+    constructor(vault, apiClient, downloader, historyManager, settings) {
+      this.vault = vault;
+      this.apiClient = apiClient;
+      this.downloader = downloader;
+      this.historyManager = historyManager;
+      this.settings = settings;
+    }
+    updateSettings(settings) {
+      this.settings = settings;
+      this.apiClient.setApiKey(settings.apiKey);
+      this.downloader.setSavePath(settings.savePath);
+      this.historyManager.updateSettings(settings);
+    }
+    async generateImage(prompt, model, size) {
+      var _a;
+      const finalModel = model || this.settings.defaultModel;
+      const finalSize = size || this.settings.defaultResolution;
+      const response = await this.apiClient.generateImage({
+        model: finalModel,
+        prompt,
+        size: finalSize
+      });
+      const imageUrl = (_a = response.data[0]) == null ? void 0 : _a.url;
+      if (!imageUrl) {
+        throw new Error("\u672A\u83B7\u53D6\u5230\u56FE\u7247 URL");
+      }
+      const localPath = await this.downloader.downloadImage(imageUrl);
+      const record = await this.historyManager.addRecord(
+        prompt,
+        finalModel,
+        finalSize,
+        localPath,
+        imageUrl,
+        "success"
+      );
+      return {
+        localPath,
+        remoteUrl: imageUrl,
+        record
+      };
+    }
+    async batchGenerate(prompts, model, size, onProgress) {
+      const batchId = generateRecordId();
+      const tasks = prompts.map((prompt) => ({
+        id: generateRecordId(),
+        prompt,
+        model: model || this.settings.defaultModel,
+        size: size || this.settings.defaultResolution,
+        status: "pending",
+        retryCount: 0
+      }));
+      const batchTask = {
+        id: batchId,
+        tasks,
+        totalCount: tasks.length,
+        successCount: 0,
+        failedCount: 0,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+        status: "running"
+      };
+      for (let i = 0; i < tasks.length; i++) {
+        const task = tasks[i];
+        task.status = "processing";
+        onProgress == null ? void 0 : onProgress(i + 1, tasks.length);
+        try {
+          const result = await this.generateImage(
+            task.prompt,
+            task.model,
+            task.size
+          );
+          task.status = "success";
+          task.result = {
+            imageUrl: result.remoteUrl,
+            localPath: result.localPath
+          };
+          batchTask.successCount++;
+          onProgress == null ? void 0 : onProgress(i + 1, tasks.length, result);
+        } catch (error) {
+          task.status = "failed";
+          task.error = error instanceof Error ? error.message : "\u751F\u6210\u5931\u8D25";
+          batchTask.failedCount++;
+          await this.historyManager.addRecord(
+            task.prompt,
+            task.model,
+            task.size,
+            "",
+            "",
+            "failed",
+            task.error
+          );
+          onProgress == null ? void 0 : onProgress(i + 1, tasks.length, { error: task.error });
+        }
+      }
+      batchTask.status = "completed";
+      return batchTask;
+    }
+    async validateApiKey() {
+      return this.apiClient.validateApiKey();
+    }
+    getSettings() {
+      return this.settings;
+    }
+  };
+  function createImageGenerator(vault, apiKey, savePath, historyPath, settings, maxRetries = 3) {
+    const apiClient = new GLMApiClient(apiKey);
+    const downloader = new ImageDownloader(vault, savePath, maxRetries);
+    const historyManager = new HistoryManager(vault, historyPath, settings);
+    return new ImageGenerator(vault, apiClient, downloader, historyManager, settings);
+  }
+
+  // src/main.ts
+  var GLMImageGeneratorPlugin = class extends import_obsidian2.Plugin {
+    async onload() {
+      console.log("GLM Image Generator \u63D2\u4EF6\u52A0\u8F7D\u6210\u529F!");
+      await this.loadSettings();
+      this.generator = createImageGenerator(
+        this.app.vault,
+        this.settings.apiKey,
+        this.settings.savePath,
+        `${this.manifest.id}/history.json`,
+        this.settings,
+        this.settings.retryCount
+      );
+      this.addSettingTab(new SettingsTab(this.app, this, this.generator));
+      this.addCommand({
+        id: "glm-generate",
+        name: "\u751F\u6210 GLM \u56FE\u7247",
+        callback: async () => {
+          var _a;
+          const prompt = await ((_a = this.app.workspace.getActiveFile()) == null ? void 0 : _a.basename) || "\u793A\u4F8B\u63D0\u793A\u8BCD";
+          try {
+            const result = await this.generator.generateImage(prompt);
+            console.log("\u751F\u6210\u6210\u529F", result);
+          } catch (e) {
+            console.error("\u751F\u6210\u5931\u8D25", e);
+          }
+        }
+      });
+    }
+    // ----------- 设置持久化 -------------
+    async loadSettings() {
+      this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
+    async saveSettings() {
+      await this.saveData(this.settings);
+    }
+  };
+  return __toCommonJS(main_exports);
+})();
