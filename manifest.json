@@ -1,12 +1,15 @@
 {
   "id": "glm-image-generator",
   "name": "GLM Image Generator",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "minAppVersion": "1.0.0",
   "description": "调用智谱 AI GLM 生成图片",
   "author": "linkerwei",
   "authorUrl": "https://github.com/linkerwei",
   "isDesktopOnly": false,
-  "permissions": ["storage", "network"],
+  "permissions": [
+    "storage",
+    "network"
+  ],
   "main": "main.js"
 }
