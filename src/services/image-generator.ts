@@ -34,6 +34,7 @@ export class ImageGenerator {
 
   updateSettings(settings: PluginSettings): void {
     this.settings = settings;
+    this.apiClient.setApiKey(settings.apiKey);
     this.downloader.setSavePath(settings.savePath);
     this.historyManager.updateSettings(settings);
   }
