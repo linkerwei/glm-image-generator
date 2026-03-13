@@ -4,7 +4,7 @@
   "description": "Obsidian 插件 - 调用智谱 AI GLM 生成图片",
   "main": "main.js",
   "scripts": {
-    "build": "tsc && esbuild src/main.ts --bundle --outfile=main.js --format=iife --global-name=exports --target=chrome88 --external:obsidian",
+    "build": "tsc && esbuild src/main.ts --bundle --outfile=main.js --format=cjs --target=chrome88 --external:obsidian",
     "dev": "tsc --watch",
     "lint": "eslint src --ext .ts",
     "test": "jest",
