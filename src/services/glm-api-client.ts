@@ -87,11 +87,8 @@ export class GLMApiClient {
           throw new Error('权限不足，请检查 API Key 权限');
         }
         if (response.status === 429) {
-          // 速率限制，等待后重试
-          const delay = Math.pow(2, i) * 1000;
-          await this.sleep(delay);
-          lastError = new Error('API 请求频率过高，请稍后重试');
-          continue;
+          // 速率限制，直接抛出错误不重试
+          throw new Error('API 请求频率过高，请稍后重试');
         }
         if (response.status >= 500) {
           // 服务器错误，等待后重试

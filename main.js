@@ -296,10 +296,7 @@ var GLMApiClient = class {
           throw new Error("\u6743\u9650\u4E0D\u8DB3\uFF0C\u8BF7\u68C0\u67E5 API Key \u6743\u9650");
         }
         if (response.status === 429) {
-          const delay = Math.pow(2, i) * 1e3;
-          await this.sleep(delay);
-          lastError = new Error("API \u8BF7\u6C42\u9891\u7387\u8FC7\u9AD8\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5");
-          continue;
+          throw new Error("API 请求频率过高，请稍后重试");
         }
         if (response.status >= 500) {
           const delay = Math.pow(2, i) * 1e3;
@@ -355,6 +352,7 @@ var GLMApiClient = class {
 };
 
 // src/services/image-downloader.ts
+var import_obsidian3 = require("obsidian");
 var ImageDownloader = class {
   constructor(vault, savePath, maxRetries = 3) {
     this.vault = vault;
@@ -385,43 +383,59 @@ var ImageDownloader = class {
     throw lastError || new Error("\u56FE\u7247\u4E0B\u8F7D\u5931\u8D25");
   }
   async fetchImage(url) {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("GET", url, true);
-      xhr.responseType = "arraybuffer";
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(xhr.response);
-        } else {
-          reject(new Error(`\u4E0B\u8F7D\u5931\u8D25: ${xhr.status}`));
-        }
-      };
-      xhr.onerror = () => {
-        reject(new Error("\u7F51\u7EDC\u8FDE\u63A5\u5931\u8D25"));
-      };
-      xhr.send();
+    const response = await (0, import_obsidian3.requestUrl)({
+      url,
+      method: "GET",
+      arrayBuffer: true
     });
+    if (response.status >= 200 && response.status < 300) {
+      return response.arrayBuffer;
+    } else {
+      throw new Error(`\u4E0B\u8F7D\u5931\u8D25: ${response.status}`);
+    }
   }
   async saveImage(filePath, data) {
     const uint8Array = new Uint8Array(data);
     await this.vault.createBinary(filePath, uint8Array);
   }
   async ensureDirectoryExists(dirPath) {
+    // 移除末尾的斜杠
+    const normalizedPath = dirPath.endsWith("/") ? dirPath.slice(0, -1) : dirPath;
     try {
-      const existingFiles = this.vault.getFiles();
-      const dirExists = existingFiles.some(
-        (f) => f.path === dirPath || f.path.startsWith(dirPath)
-      );
-      if (!dirExists) {
-        await this.vault.create("", dirPath + ".placeholder");
+      // 检查目录是否存在
+      const folder = this.vault.getAbstractFileByPath(normalizedPath);
+      if (!folder) {
+        // 递归创建目录
+        await this.createFolderRecursive(normalizedPath);
       }
     } catch (error) {
+      // 如果出错，尝试创建目录
+      try {
+        await this.createFolderRecursive(normalizedPath);
+      } catch (e) {
+        // 忽略已存在的错误
+      }
+    }
+  }
+  async createFolderRecursive(folderPath) {
+    const parts = folderPath.split("/").filter(p => p);
+    let currentPath = "";
+    for (const part of parts) {
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+      try {
+        const folder = this.vault.getAbstractFileByPath(currentPath);
+        if (!folder) {
+          await this.vault.createFolder(currentPath);
+        }
+      } catch (e) {
+        // 忽略已存在的错误
+      }
     }
   }
   async deleteImage(filePath) {
     try {
-      const file = this.vault.getFile(filePath);
-      if (file) {
+      const file = this.vault.getAbstractFileByPath(filePath);
+      if (file && file instanceof import_obsidian3.TFile) {
         await this.vault.delete(file);
       }
     } catch (error) {
@@ -433,6 +447,7 @@ var ImageDownloader = class {
 };
 
 // src/services/history-manager.ts
+var import_obsidian4 = require("obsidian");
 var HistoryManager = class {
   constructor(vault, historyPath, settings) {
     this.vault = vault;
@@ -440,9 +455,16 @@ var HistoryManager = class {
     this.settings = settings;
     this.historyData = { records: [] };
   }
+  getFileByPath(path) {
+    const file = this.vault.getAbstractFileByPath(path);
+    if (file && file instanceof import_obsidian4.TFile) {
+      return file;
+    }
+    return null;
+  }
   async load() {
     try {
-      const file = this.vault.getFile(this.historyPath);
+      const file = this.getFileByPath(this.historyPath);
       if (file) {
         const content = await this.vault.read(file);
         this.historyData = JSON.parse(content);
@@ -453,21 +475,42 @@ var HistoryManager = class {
   }
   async save() {
     await this.ensureHistoryFileExists();
-    const file = this.vault.getFile(this.historyPath);
+    const file = this.getFileByPath(this.historyPath);
     if (file) {
       await this.vault.modify(file, JSON.stringify(this.historyData, null, 2));
     } else {
-      await this.vault.create(this.historyPath, JSON.stringify(this.historyData, null, 2));
+      try {
+        await this.vault.create(this.historyPath, JSON.stringify(this.historyData, null, 2));
+      } catch (e) {
+        await this.ensureDirectoryExists();
+        await this.vault.create(this.historyPath, JSON.stringify(this.historyData, null, 2));
+      }
+    }
+  }
+  async ensureDirectoryExists() {
+    const dirPath = this.historyPath.substring(0, this.historyPath.lastIndexOf("/"));
+    if (dirPath) {
+      const folder = this.vault.getAbstractFileByPath(dirPath);
+      if (!folder) {
+        await this.vault.createFolder(dirPath);
+      }
     }
   }
   async ensureHistoryFileExists() {
     try {
-      const file = this.vault.getFile(this.historyPath);
+      await this.ensureDirectoryExists();
+      const file = this.getFileByPath(this.historyPath);
       if (!file) {
         await this.vault.create(this.historyPath, JSON.stringify({ records: [] }, null, 2));
       }
     } catch (error) {
-      await this.vault.create(this.historyPath, JSON.stringify({ records: [] }, null, 2));
+      console.error("ensureHistoryFileExists error:", error);
+      try {
+        await this.ensureDirectoryExists();
+        await this.vault.create(this.historyPath, JSON.stringify({ records: [] }, null, 2));
+      } catch (e) {
+        console.error("Failed to create history file:", e);
+      }
     }
   }
   async addRecord(prompt, model, size, localPath, remoteUrl, status, errorMessage) {
@@ -660,6 +703,200 @@ function createImageGenerator(vault, apiKey, savePath, historyPath, settings, ma
   return new ImageGenerator(vault, apiClient, downloader, historyManager, settings);
 }
 
+// src/ui/generator-modal.ts
+var GeneratorModal = class extends import_obsidian2.Modal {
+  constructor(app, generator, settings, onSuccess, onCloseCallback) {
+    super(app);
+    this.generator = generator;
+    this.settings = settings;
+    this.model = settings.defaultModel;
+    this.resolution = settings.defaultResolution;
+    this.autoInsert = settings.autoInsert;
+    this.onSuccess = onSuccess;
+    this.onCloseCallback = onCloseCallback;
+    this.prompt = "";
+    this.isGenerating = false;
+    this.promptTextarea = null;
+    this.charCountEl = null;
+    this.generateBtn = null;
+    this.statusEl = null;
+    this.previewContainer = null;
+  }
+  display() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: "GLM \u56FE\u7247\u751F\u6210", cls: "glm-modal-title" });
+    contentEl.createEl("div", { cls: "glm-form-group" });
+    contentEl.createEl("label", { text: "\u63D0\u793A\u8BCD *", cls: "glm-form-label" });
+    this.promptTextarea = contentEl.createEl("textarea", {
+      cls: "glm-textarea",
+      attr: { placeholder: "\u63CF\u8FF0\u4F60\u60F3\u751F\u6210\u7684\u56FE\u7247...", rows: 4 }
+    });
+    this.promptTextarea.addEventListener("input", () => {
+      this.prompt = this.promptTextarea.value;
+      this.updateCharCount();
+      this.validateForm();
+    });
+    this.charCountEl = contentEl.createEl("div", { cls: "glm-char-count" });
+    this.updateCharCount();
+    new import_obsidian2.Setting(contentEl).addButton((button) => {
+      button.setButtonText("\u6A21\u677F\u5E93");
+      button.onClick(() => this.showTemplates());
+    });
+    contentEl.createEl("div", { cls: "glm-form-group" });
+    contentEl.createEl("label", { text: "\u6A21\u578B", cls: "glm-form-label" });
+    new import_obsidian2.Setting(contentEl).addDropdown((dropdown) => {
+      MODELS.forEach((model) => {
+        dropdown.addOption(model.id, `${model.name} (${model.price}\u5143/\u6B21)`);
+      });
+      dropdown.setValue(this.model);
+      dropdown.onChange(async (value) => {
+        this.model = value;
+        this.updateCharCount();
+        this.validateForm();
+      });
+    });
+    contentEl.createEl("div", { cls: "glm-form-group" });
+    contentEl.createEl("label", { text: "\u5206\u8FA8\u7387", cls: "glm-form-label" });
+    new import_obsidian2.Setting(contentEl).addDropdown((dropdown) => {
+      RESOLUTION_PRESETS.forEach((preset) => {
+        dropdown.addOption(`${preset.width}x${preset.height}`, preset.label);
+      });
+      dropdown.setValue(this.resolution);
+      dropdown.onChange((value) => {
+        this.resolution = value;
+      });
+    });
+    new import_obsidian2.Setting(contentEl).addToggle((toggle) => {
+      toggle.setValue(this.autoInsert);
+      toggle.onChange((value) => {
+        this.autoInsert = value;
+      });
+    }).setName("\u751F\u6210\u540E\u81EA\u52A8\u63D2\u5165\u5230\u6587\u6863");
+    this.statusEl = contentEl.createEl("div", { cls: "glm-status" });
+    this.previewContainer = contentEl.createEl("div", { cls: "glm-preview-container" });
+    const buttonContainer = contentEl.createEl("div", { cls: "glm-button-container" });
+    buttonContainer.createEl("button", { text: "\u53D6\u6D88", cls: "glm-btn glm-btn-secondary" }).addEventListener("click", () => this.close());
+    this.generateBtn = buttonContainer.createEl("button", { text: "\u751F\u6210\u56FE\u7247", cls: "glm-btn glm-btn-primary" });
+    this.generateBtn.addEventListener("click", () => this.generateImage());
+    this.validateForm();
+  }
+  updateCharCount() {
+    if (!this.charCountEl || !this.promptTextarea) return;
+    const maxLength = 1e3;
+    const currentLength = this.prompt.length;
+    this.charCountEl.textContent = `${currentLength}/${maxLength} \u5B57\u7B26`;
+    if (currentLength > maxLength) {
+      this.charCountEl.addClass("glm-char-count-error");
+    } else {
+      this.charCountEl.removeClass("glm-char-count-error");
+    }
+  }
+  validateForm() {
+    if (!this.generateBtn) return;
+    const isValid = this.prompt.trim().length > 0 && this.prompt.length <= 1e3;
+    this.generateBtn.disabled = !isValid || this.isGenerating;
+  }
+  showTemplates() {
+    const templates = [
+      { name: "\u6982\u5FF5\u56FE", prompt: "\u7B80\u6D01\u7684{\u6982\u5FF5\u540D\u79F0}\u793A\u610F\u56FE\uFF0C\u6D45\u8272\u80CC\u666F\uFF0C\u6E05\u6670\u7684\u4FE1\u606F\u5C42\u6B21\uFF0C\u73B0\u4EE3\u6241\u5E73\u5316\u8BBE\u8BA1" },
+      { name: "\u6D41\u7A0B\u56FE", prompt: "{\u6D41\u7A0B\u540D\u79F0}\u6D41\u7A0B\u56FE\uFF0C\u6B65\u9AA4\u6E05\u6670\uFF0C\u7BAD\u5934\u8FDE\u63A5\uFF0C\u914D\u8272\u67D4\u548C" },
+      { name: "\u601D\u7EF4\u5BFC\u56FE", prompt: "{\u4E3B\u9898}\u601D\u7EF4\u5BFC\u56FE\uFF0C\u4E2D\u5FC3\u4E3B\u9898\u7A81\u51FA\uFF0C\u5206\u652F\u6E05\u6670\uFF0C\u989C\u8272\u4E30\u5BCC" },
+      { name: "\u8282\u65E5\u6D77\u62A5", prompt: "{\u8282\u65E5\u540D\u79F0}\u4E3B\u9898\u6D77\u62A5\uFF0C{\u5177\u4F53\u5143\u7D20}\uFF0C\u559C\u5E86\u6C1B\u56F4\uFF0C\u6587\u5B57\u6392\u7248\u7CBE\u7F8E" },
+      { name: "\u4EA7\u54C1\u5BA3\u4F20", prompt: "{\u4EA7\u54C1\u540D\u79F0}\u4EA7\u54C1\u5BA3\u4F20\u56FE\uFF0C{\u4EA7\u54C1\u7279\u70B9}\uFF0C\u9AD8\u8D28\u91CF\uFF0C\u4E13\u4E1A\u6444\u5F71\u98CE\u683C" },
+      { name: "\u5C01\u9762\u56FE", prompt: "\u793E\u4EA4\u5A92\u4F53\u5C01\u9762\uFF0C{\u4E3B\u9898}\uFF0C16:9\u6BD4\u4F8B\uFF0C\u89C6\u89C9\u51B2\u51FB\u529B\u5F3A" },
+      { name: "\u77E5\u8BC6\u5361\u7247", prompt: "{\u77E5\u8BC6\u70B9\u5185\u5BB9}\u77E5\u8BC6\u5361\u7247\uFF0C\u56FE\u6587\u5E76\u8302\uFF0C\u6613\u4E8E\u7406\u89E3\uFF0C\u7F8E\u89C2\u5927\u65B9" },
+      { name: "\u5F15\u8A00\u5361\u7247", prompt: "\u5F15\u8A00\u5361\u7247\uFF0C'\u5F15\u8A00\u5185\u5BB9'\uFF0C\u4F18\u96C5\u7684\u6392\u7248\uFF0C\u80CC\u666F\u7B80\u7EA6" }
+    ];
+    const templateModal = new import_obsidian2.Modal(this.app);
+    templateModal.titleEl.textContent = "\u63D0\u793A\u8BCD\u6A21\u677F";
+    const listEl = templateModal.contentEl.createEl("div", { cls: "glm-template-list" });
+    templates.forEach((template) => {
+      const itemEl = listEl.createEl("div", { cls: "glm-template-item" });
+      itemEl.createEl("strong", { text: template.name });
+      itemEl.createEl("p", { text: template.prompt, cls: "glm-template-prompt" });
+      itemEl.addEventListener("click", () => {
+        const prompt = template.prompt.replace(/\{[^}]+\}/g, "");
+        this.promptTextarea.value = prompt;
+        this.prompt = prompt;
+        this.updateCharCount();
+        this.validateForm();
+        templateModal.close();
+      });
+    });
+    templateModal.open();
+  }
+  async generateImage() {
+    if (this.isGenerating) return;
+    if (!this.settings.apiKey) {
+      new import_obsidian2.Notice("\u8BF7\u5148\u914D\u7F6E API Key");
+      return;
+    }
+    this.isGenerating = true;
+    this.generateBtn.disabled = true;
+    this.generateBtn.textContent = "\u751F\u6210\u4E2D...";
+    this.updateStatus("\u6B63\u5728\u751F\u6210\u56FE\u7247\uFF0C\u8BF7\u7A0D\u5019...");
+    this.previewContainer.empty();
+    try {
+      const result = await this.generator.generateImage(this.prompt, this.model, this.resolution);
+      this.updateStatus("\u751F\u6210\u6210\u529F\uFF01");
+      const previewEl = this.previewContainer.createEl("div", { cls: "glm-preview" });
+      try {
+        const vault = this.app.vault;
+        const file = vault.getFileByPath(result.localPath);
+        if (file) {
+          const blob = await vault.readBinary(file);
+          const blobUrl = URL.createObjectURL(new Blob([blob], { type: "image/png" }));
+          previewEl.createEl("img", { attr: { src: blobUrl }, cls: "glm-preview-image" });
+        }
+      } catch (e) {
+        previewEl.createEl("p", { text: "\u56FE\u7247\u5DF2\u4FDD\u5B58\u5230: " + result.localPath });
+      }
+      const actionContainer = this.previewContainer.createEl("div", { cls: "glm-action-buttons" });
+      actionContainer.createEl("button", { text: "\u63D2\u5165\u5230\u6587\u6863", cls: "glm-btn glm-btn-primary" }).addEventListener("click", () => {
+        this.insertToDocument(result.localPath);
+        this.close();
+      });
+      actionContainer.createEl("button", { text: "\u5173\u95ED", cls: "glm-btn glm-btn-secondary" }).addEventListener("click", () => this.close());
+      this.onSuccess?.(result.localPath);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "\u751F\u6210\u5931\u8D25";
+      this.updateStatus(`\u751F\u6210\u5931\u8D25: ${errorMessage}`, true);
+      new import_obsidian2.Notice("\u751F\u6210\u5931\u8D25: " + errorMessage);
+    } finally {
+      this.isGenerating = false;
+      this.generateBtn.disabled = false;
+      this.generateBtn.textContent = "\u751F\u6210\u56FE\u7247";
+    }
+  }
+  updateStatus(message, isError = false) {
+    if (!this.statusEl) return;
+    this.statusEl.textContent = message;
+    if (isError) {
+      this.statusEl.addClass("glm-status-error");
+    } else {
+      this.statusEl.removeClass("glm-status-error");
+    }
+  }
+  insertToDocument(imagePath) {
+    const imageMarkdown = `![${this.prompt.slice(0, 50)}](${imagePath})`;
+    const activeEditor = this.app.workspace.activeEditor;
+    if (activeEditor && activeEditor.editor) {
+      activeEditor.editor.replaceSelection(imageMarkdown + "\n");
+      new import_obsidian2.Notice("\u56FE\u7247\u5DF2\u63D2\u5165\u5230\u6587\u6863");
+    } else {
+      new import_obsidian2.Notice("\u672A\u627E\u5230\u6D3B\u52A8\u7F16\u8F91\u5668");
+    }
+  }
+  onOpen() {
+    this.display();
+  }
+  onClose() {
+    this.onCloseCallback?.();
+    super.onClose();
+  }
+};
+
 // src/main.ts
 var GLMImageGeneratorPlugin = class extends import_obsidian2.Plugin {
   async onload() {
@@ -677,15 +914,8 @@ var GLMImageGeneratorPlugin = class extends import_obsidian2.Plugin {
     this.addCommand({
       id: "glm-generate",
       name: "\u751F\u6210 GLM \u56FE\u7247",
-      callback: async () => {
-        const file = this.app.workspace.getActiveFile();
-        const prompt = (file == null ? void 0 : file.basename) || "\u793A\u4F8B\u63D0\u793A\u8BCD";
-        try {
-          const result = await this.generator.generateImage(prompt);
-          console.log("\u751F\u6210\u6210\u529F", result);
-        } catch (e) {
-          console.error("\u751F\u6210\u5931\u8D25", e);
-        }
+      callback: () => {
+        new GeneratorModal(this.app, this.generator, this.settings).open();
       }
     });
   }

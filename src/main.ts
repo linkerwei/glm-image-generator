@@ -2,6 +2,7 @@ import { Plugin } from 'obsidian';
 import { DEFAULT_SETTINGS, PluginSettings } from './types';
 import { SettingsTab } from './ui/settings-tab';
 import { createImageGenerator, ImageGenerator } from './services/image-generator';
+import { GeneratorModal } from './ui/generator-modal';
 
 class GLMImageGeneratorPlugin extends Plugin {
   settings!: PluginSettings;
@@ -25,19 +26,12 @@ class GLMImageGeneratorPlugin extends Plugin {
     // 注册插件设置面板
     this.addSettingTab(new SettingsTab(this.app, this, this.generator));
 
-    // 示例命令：生成图片（仅演示）
+    // 命令：打开图片生成面板
     this.addCommand({
       id: 'glm-generate',
       name: '生成 GLM 图片',
-      callback: async () => {
-        const file = this.app.workspace.getActiveFile();
-        const prompt = file?.basename || '示例提示词';
-        try {
-          const result = await this.generator.generateImage(prompt);
-          console.log('生成成功', result);
-        } catch (e) {
-          console.error('生成失败', e);
-        }
+      callback: () => {
+        new GeneratorModal(this.app, this.generator, this.settings).open();
       }
     });
   }
