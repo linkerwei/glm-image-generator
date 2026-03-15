@@ -69,6 +69,16 @@ export class SettingsTab extends PluginSettingTab {
         });
       });
 
+    new Setting(containerEl)
+      .setName('创建示例模板')
+      .setDesc('在当前文件夹创建批量生成示例文件')
+      .addButton((button) => {
+        button.setButtonText('📄 创建模板');
+        button.onClick(async () => {
+          await this.createBatchTemplate();
+        });
+      });
+
     containerEl.createEl('hr'); // 分隔线
 
     // API 配置
@@ -280,5 +290,111 @@ export class SettingsTab extends PluginSettingTab {
       text: '总成本: ¥0.00',
       cls: 'setting-item-description',
     });
+  }
+
+  /**
+   * 创建批量生成示例模板
+   */
+  private async createBatchTemplate(): Promise<void> {
+    try {
+      // 获取当前活动文件所在的文件夹
+      const activeFile = this.app.workspace.getActiveFile();
+      let targetFolder = '';
+
+      if (activeFile) {
+        // 如果有活动文件，使用其所在文件夹
+        const parentPath = activeFile.parent?.path || '';
+        targetFolder = parentPath ? `${parentPath}/` : '';
+      }
+
+      // 生成文件名（避免重复）
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 10);
+      const fileName = `批量生成示例-${timestamp}.md`;
+      const filePath = targetFolder + fileName;
+
+      // 检查文件是否已存在
+      const existingFile = this.app.vault.getAbstractFileByPath(filePath);
+      if (existingFile) {
+        new Notice(`文件已存在: ${filePath}`);
+        return;
+      }
+
+      // 模板内容
+      const templateContent = `---
+glm_batch:
+  model: glm-image
+  resolution: 1280x1280
+  auto_insert: true
+---
+
+# 批量图片生成示例
+
+## 📝 使用说明
+
+1. **执行命令**: 按 \`Ctrl/Cmd + P\`，输入"从文件批量生成"
+2. **查看预览**: 确认任务数量和预估成本
+3. **开始生成**: 点击"开始生成"按钮
+4. **查看结果**: 生成完成后图片会自动插入到下方
+
+## 💡 提示
+
+- 支持的模型: \`glm-image\`（擅长文字渲染）、\`cogView-4-250304\`（擅长中文）
+- 支持的分辨率: \`1280x1280\`、\`1056x1568\`、\`1568x1056\`、\`1728x960\`、\`960x1728\`
+- 参数覆盖: 在提示词前一行添加 \`<!-- glm: model=xxx resolution=xxx -->\`
+
+## 📋 任务列表
+
+1. 一只可爱的小猫咪，坐在阳光明媚的窗台上，背景是蓝天白云，温馨治愈的风格
+
+2. 餐饮美食宣传海报，红烧狮子头，高清摄影，暖色调，食欲感强烈
+
+3. 科技感产品宣传图，智能手机，蓝色渐变背景，极简设计，未来感
+
+4. <!-- glm: model=cogView-4-250304 resolution=1056x1568 -->
+   餐厅菜单设计，宫保鸡丁，高清美食摄影，包含中文菜名
+
+5. 春季促销海报，粉色樱花背景，优惠信息醒目，节日氛围浓厚
+
+---
+
+**预估成本**: ¥0.50 (5张 × ¥0.10/张)
+
+## 🎯 高级用法
+
+### 自定义参数示例
+
+\`\`\`markdown
+3. <!-- glm: model=cogView-4-250304 resolution=1056x1568 -->
+   这个任务使用 CogView-4 模型和 3:4 分辨率
+\`\`\`
+
+### 支持的参数
+
+| 参数 | 说明 | 可选值 |
+|------|------|--------|
+| \`model\` | 使用的模型 | \`glm-image\`, \`cogView-4-250304\` |
+| \`resolution\` | 图片分辨率 | \`1280x1280\`, \`1056x1568\`, \`1568x1056\`, \`1728x960\`, \`960x1728\` |
+| \`auto_insert\` | 是否自动插入结果 | \`true\`, \`false\` |
+
+---
+
+**创建时间**: ${new Date().toLocaleString('zh-CN')}
+`;
+
+      // 创建文件
+      await this.app.vault.create(filePath, templateContent);
+
+      // 在编辑器中打开文件
+      const file = this.app.vault.getAbstractFileByPath(filePath);
+      if (file) {
+        const leaf = this.app.workspace.getLeaf(false);
+        await leaf.openFile(file as any);
+      }
+
+      new Notice(`✅ 模板已创建: ${fileName}`);
+    } catch (error) {
+      console.error('创建模板失败:', error);
+      new Notice(`❌ 创建失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
   }
 }
