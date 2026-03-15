@@ -48,7 +48,6 @@ export class ImageDownloader {
       const response = await requestUrl({
         url: url,
         method: 'GET',
-        arrayBuffer: true, // 返回 ArrayBuffer
       });
 
       if (response.status >= 200 && response.status < 300) {
