@@ -1311,10 +1311,16 @@ var ImageDownloader = class {
     }
     try {
       const abstractFile = this.vault.getAbstractFileByPath(dirPath);
-      if (!abstractFile) {
-        console.log("\u76EE\u5F55\u5C06\u81EA\u52A8\u521B\u5EFA:", dirPath);
+      if (abstractFile) {
+        return;
       }
     } catch (error) {
+    }
+    try {
+      await this.vault.adapter.mkdir(dirPath);
+      console.log("\u76EE\u5F55\u5DF2\u521B\u5EFA:", dirPath);
+    } catch (error) {
+      console.log("\u521B\u5EFA\u76EE\u5F55\u65F6\u51FA\u9519:", error);
     }
   }
   async deleteImage(filePath) {

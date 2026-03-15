@@ -66,8 +66,7 @@ export class ImageDownloader {
   }
 
   private async ensureDirectoryExists(dirPath: string): Promise<void> {
-    // Obsidian Vault API 在创建文件时会自动创建父目录
-    // 只需确保路径以 / 结尾
+    // 确保路径以 / 结尾
     if (!dirPath.endsWith('/')) {
       dirPath += '/';
     }
@@ -75,13 +74,22 @@ export class ImageDownloader {
     // 检查目录是否存在
     try {
       const abstractFile = this.vault.getAbstractFileByPath(dirPath);
-      if (!abstractFile) {
-        // 目录不存在，不需要手动创建
-        // Obsidian 会在创建文件时自动创建
-        console.log('目录将自动创建:', dirPath);
+      if (abstractFile) {
+        // 目录已存在
+        return;
       }
     } catch (error) {
-      // 忽略错误
+      // 忽略错误，继续创建
+    }
+
+    // 目录不存在，需要创建
+    try {
+      // 使用 vault.adapter.mkdir 创建目录（支持多级目录）
+      await this.vault.adapter.mkdir(dirPath);
+      console.log('目录已创建:', dirPath);
+    } catch (error) {
+      // 可能是目录已存在或其他错误
+      console.log('创建目录时出错:', error);
     }
   }
 
