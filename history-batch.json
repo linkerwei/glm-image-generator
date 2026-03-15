@@ -1,0 +1,44 @@
+[
+  {
+    "id": "1773570204863-v1d7md",
+    "type": "batch",
+    "timestamp": "2026-03-15T10:23:24.863Z",
+    "sourceFile": "批量生成示例-产品宣传图.md",
+    "totalTasks": 6,
+    "successCount": 6,
+    "failedCount": 0,
+    "totalCost": 0.6,
+    "tasks": [
+      {
+        "prompt": "一只可爱的小猫咪,坐在阳光明媚的窗台上,背景是蓝天白云,温馨治愈的风格",
+        "status": "success",
+        "localPath": "附件/glm-images/glm-1773570246580-owu9pq.png"
+      },
+      {
+        "prompt": "餐饮美食宣传海报,红烧狮子头,高清摄影,暖色调,食欲感强烈",
+        "status": "success",
+        "localPath": "附件/glm-images/glm-1773570288265-pl7tal.png"
+      },
+      {
+        "prompt": "科技感产品宣传图,智能手机,蓝色渐变背景,极简设计,未来感",
+        "status": "success",
+        "localPath": "附件/glm-images/glm-1773570330349-yfwtw5.png"
+      },
+      {
+        "prompt": "春季促销海报,粉色樱花背景,优惠信息醒目,节日氛围浓厚",
+        "status": "success",
+        "localPath": "附件/glm-images/glm-1773570374358-u7zbw7.png"
+      },
+      {
+        "prompt": "知识卡片设计,时间管理技巧,清新配色,信息图表,易于理解",
+        "status": "success",
+        "localPath": "附件/glm-images/glm-1773570418225-uaok3t.png"
+      },
+      {
+        "prompt": "<!-- glm: model=cogView-4-250304 resolution=1056x1568 -->",
+        "status": "success",
+        "localPath": "附件/glm-images/glm-1773570460793-2fajki.png"
+      }
+    ]
+  }
+]

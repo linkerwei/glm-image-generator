@@ -17,10 +17,62 @@ export class SettingsTab extends PluginSettingTab {
     containerEl.empty();
 
     // 标题
-    containerEl.createEl('h2', { text: 'GLM 图片生成器设置' });
+    containerEl.createEl('h2', { text: 'GLM 图片生成器' });
+
+    // 快捷操作区域
+    containerEl.createEl('h3', { text: '🚀 快捷操作' });
+
+    new Setting(containerEl)
+      .setName('生成图片')
+      .setDesc('打开单张图片生成面板')
+      .addButton((button) => {
+        button.setButtonText('🎨 生成图片');
+        button.onClick(() => {
+          // @ts-ignore
+          const GeneratorModal = require('./generator-modal').GeneratorModal;
+          new GeneratorModal(this.app, this.generator, this.plugin.settings).open();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName('批量生成图片')
+      .setDesc('手动输入提示词，批量生成')
+      .addButton((button) => {
+        button.setButtonText('📝 批量生成');
+        button.onClick(() => {
+          // @ts-ignore
+          const BatchGeneratorModal = require('./batch-generator-modal').BatchGeneratorModal;
+          new BatchGeneratorModal(this.app, this.generator, this.plugin.settings).open();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName('从文件批量生成')
+      .setDesc('从当前打开的 Markdown 文件批量生成')
+      .addButton((button) => {
+        button.setButtonText('📁 文件批量生成');
+        button.onClick(() => {
+          // @ts-ignore
+          this.plugin.handleBatchGenerateFromFile();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName('查看历史记录')
+      .setDesc('查看所有图片生成历史')
+      .addButton((button) => {
+        button.setButtonText('📊 查看历史');
+        button.onClick(() => {
+          // @ts-ignore
+          const HistoryPanel = require('./history-panel').HistoryPanel;
+          new HistoryPanel(this.app, this.generator.getHistoryManager()).open();
+        });
+      });
+
+    containerEl.createEl('hr'); // 分隔线
 
     // API 配置
-    containerEl.createEl('h3', { text: 'API 配置' });
+    containerEl.createEl('h3', { text: '⚙️ API 配置' });
 
     new Setting(containerEl)
       .setName('API Key')

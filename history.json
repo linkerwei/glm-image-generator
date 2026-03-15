@@ -1,0 +1,15 @@
+{
+  "records": [
+    {
+      "id": "1773569242196-t8kqng",
+      "prompt": "1. 一只可爱的小猫咪,坐在阳光明媚的窗台上,背景是蓝天白云,温馨治愈的风格",
+      "model": "glm-image",
+      "size": "1280x1280",
+      "timestamp": "2026-03-15T10:07:22.196Z",
+      "localPath": "附件/glm-images/glm-1773569241852-ktjs65.png",
+      "remoteUrl": "https://maas-watermark-prod-new.cn-wlcb.ufileos.com/202603151807580d18d6a41db24aa8_watermark.png?UCloudPublicKey=TOKEN_6df395df-5d8c-4f69-90f8-a4fe46088958&Signature=INS6HwKTvbnEvhWVYcXzZvT9OCI%3D&Expires=1774174116",
+      "cost": 0.1,
+      "status": "success"
+    }
+  ]
+}

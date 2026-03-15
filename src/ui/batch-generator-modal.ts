@@ -1,6 +1,7 @@
 import { App, Modal, Setting, Notice } from 'obsidian';
 import { PluginSettings, ModelType, RESOLUTION_PRESETS } from '../types';
 import { ImageGenerator } from '../services/image-generator';
+import { HistoryPanel } from './history-panel';
 
 export class BatchGeneratorModal extends Modal {
   private generator: ImageGenerator;
@@ -19,6 +20,9 @@ export class BatchGeneratorModal extends Modal {
   private progressBar: HTMLElement | null = null;
   private resultsContainer: HTMLElement | null = null;
 
+  // 存储生成结果
+  private generatedImages: Array<{ prompt: string; localPath?: string; error?: string }> = [];
+
   constructor(
     app: App,
     generator: ImageGenerator,
@@ -31,6 +35,10 @@ export class BatchGeneratorModal extends Modal {
     this.model = settings.defaultModel;
     this.resolution = settings.defaultResolution;
     this.onCloseCallback = onCloseCallback;
+  }
+
+  onOpen(): void {
+    this.display();
   }
 
   display(): void {
@@ -158,31 +166,99 @@ export class BatchGeneratorModal extends Modal {
     this.progressBar.style.width = `${percentage}%`;
   }
 
-  private addResult(prompt: string, index: number, result: { error?: string } | undefined): void {
+  private addResult(prompt: string, index: number, result: any): void {
     if (!this.resultsContainer) return;
 
     const resultEl = this.resultsContainer.createEl('div', {
       cls: 'glm-result-item',
     });
 
+    // 保存结果
     if (result?.error) {
+      this.generatedImages[index] = { prompt, error: result.error };
+    } else {
+      this.generatedImages[index] = { prompt, localPath: result?.localPath };
+    }
+
+    if (result?.error) {
+      // 失败情况
       resultEl.createEl('span', {
         text: '❌',
         cls: 'glm-result-icon',
       });
-      resultEl.createEl('span', {
-        text: `${index + 1}. ${prompt.slice(0, 30)}... - 失败`,
-        cls: 'glm-result-text glm-result-error',
+
+      const textContainer = resultEl.createEl('div', { cls: 'glm-result-content' });
+      textContainer.createEl('div', {
+        text: `${index + 1}. ${prompt.slice(0, 50)}${prompt.length > 50 ? '...' : ''}`,
+        cls: 'glm-result-prompt',
+      });
+      textContainer.createEl('div', {
+        text: `错误: ${result.error}`,
+        cls: 'glm-result-error',
       });
     } else {
+      // 成功情况 - 显示图片预览
       resultEl.createEl('span', {
         text: '✅',
         cls: 'glm-result-icon',
       });
-      resultEl.createEl('span', {
-        text: `${index + 1}. ${prompt.slice(0, 30)}... - 成功`,
-        cls: 'glm-result-text glm-result-success',
+
+      const textContainer = resultEl.createEl('div', { cls: 'glm-result-content' });
+
+      textContainer.createEl('div', {
+        text: `${index + 1}. ${prompt.slice(0, 50)}${prompt.length > 50 ? '...' : ''}`,
+        cls: 'glm-result-prompt',
       });
+
+      // 显示图片预览
+      if (result?.localPath) {
+        const imageContainer = textContainer.createEl('div', { cls: 'glm-result-preview' });
+
+        // 使用 Obsidian 的资源路径
+        const resourcePath = this.app.vault.adapter.getResourcePath(result.localPath);
+
+        const img = imageContainer.createEl('img', {
+          attr: {
+            src: resourcePath,
+            alt: prompt,
+          },
+        });
+
+        img.style.maxWidth = '200px';
+        img.style.maxHeight = '150px';
+        img.style.marginTop = '8px';
+        img.style.borderRadius = '4px';
+        img.style.cursor = 'pointer';
+
+        // 点击放大
+        img.addEventListener('click', () => {
+          this.showImagePreview(result.localPath);
+        });
+
+        // 复制链接按钮
+        const actionsContainer = textContainer.createEl('div', { cls: 'glm-result-actions' });
+        actionsContainer.createEl('button', {
+          text: '复制链接',
+          cls: 'glm-btn-small',
+        }).addEventListener('click', () => {
+          navigator.clipboard.writeText(`![](${result.localPath})`);
+          new Notice('图片链接已复制');
+        });
+
+        actionsContainer.createEl('button', {
+          text: '插入到文档',
+          cls: 'glm-btn-small',
+        }).addEventListener('click', async () => {
+          const activeFile = this.app.workspace.getActiveFile();
+          if (activeFile) {
+            const editor = this.app.workspace.activeEditor?.editor;
+            if (editor) {
+              editor.replaceSelection(`![](${result.localPath})\n`);
+              new Notice('图片已插入');
+            }
+          }
+        });
+      }
     }
   }
 
@@ -237,12 +313,27 @@ export class BatchGeneratorModal extends Modal {
       this.progressEl!.textContent = `完成！成功: ${successCount}, 失败: ${failedCount}`;
       new Notice(`批量生成完成！成功: ${successCount}, 失败: ${failedCount}`);
 
-      // 添加批量插入按钮
+      // 添加操作按钮
       if (successCount > 0) {
         const actionContainer = this.resultsContainer!.createEl('div', {
           cls: 'glm-action-buttons',
         });
 
+        // 查看历史按钮
+        actionContainer.createEl('button', {
+          text: '📊 查看历史记录',
+          cls: 'glm-btn glm-btn-primary',
+        }).addEventListener('click', () => {
+          this.close();
+          // 打开历史面板
+          const historyPanel = new HistoryPanel(
+            this.app,
+            this.generator['historyManager']
+          );
+          historyPanel.open();
+        });
+
+        // 关闭按钮
         actionContainer.createEl('button', {
           text: '关闭',
           cls: 'glm-btn glm-btn-secondary',
@@ -265,5 +356,34 @@ export class BatchGeneratorModal extends Modal {
   onClose(): void {
     this.onCloseCallback?.();
     super.onClose();
+  }
+
+  /**
+   * 显示图片预览
+   */
+  private showImagePreview(imagePath: string) {
+    const modal = new Modal(this.app);
+    modal.onOpen = () => {
+      const { contentEl } = modal;
+      contentEl.addClass('glm-image-preview-modal');
+
+      // 使用 Obsidian 的资源路径
+      const resourcePath = this.app.vault.adapter.getResourcePath(imagePath);
+
+      const img = contentEl.createEl('img', {
+        attr: {
+          src: resourcePath,
+        },
+      });
+
+      img.style.maxWidth = '100%';
+      img.style.maxHeight = '80vh';
+
+      contentEl.addEventListener('click', () => {
+        modal.close();
+      });
+    };
+
+    modal.open();
   }
 }

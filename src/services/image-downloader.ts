@@ -1,3 +1,4 @@
+import { requestUrl } from 'obsidian';
 import { generateFileName } from '../types';
 
 export class ImageDownloader {
@@ -43,25 +44,21 @@ export class ImageDownloader {
   }
 
   private async fetchImage(url: string): Promise<ArrayBuffer> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', url, true);
-      xhr.responseType = 'arraybuffer';
+    try {
+      const response = await requestUrl({
+        url: url,
+        method: 'GET',
+        arrayBuffer: true, // 返回 ArrayBuffer
+      });
 
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(xhr.response);
-        } else {
-          reject(new Error(`下载失败: ${xhr.status}`));
-        }
-      };
-
-      xhr.onerror = () => {
-        reject(new Error('网络连接失败'));
-      };
-
-      xhr.send();
-    });
+      if (response.status >= 200 && response.status < 300) {
+        return response.arrayBuffer;
+      } else {
+        throw new Error(`下载失败: ${response.status}`);
+      }
+    } catch (error) {
+      throw new Error(`图片下载失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
   }
 
   private async saveImage(filePath: string, data: ArrayBuffer): Promise<void> {
@@ -70,20 +67,22 @@ export class ImageDownloader {
   }
 
   private async ensureDirectoryExists(dirPath: string): Promise<void> {
-    // 检查目录是否存在，不存在则创建
-    try {
-      const existingFiles = this.vault.getFiles();
-      const dirExists = existingFiles.some(
-        (f: any) => f.path === dirPath || f.path.startsWith(dirPath)
-      );
+    // Obsidian Vault API 在创建文件时会自动创建父目录
+    // 只需确保路径以 / 结尾
+    if (!dirPath.endsWith('/')) {
+      dirPath += '/';
+    }
 
-      if (!dirExists) {
-        // 尝试创建目录（Obsidian vault API 不支持直接创建目录，
-        // 但可以在保存文件时自动创建父目录）
-        await this.vault.create('', dirPath + '.placeholder');
+    // 检查目录是否存在
+    try {
+      const abstractFile = this.vault.getAbstractFileByPath(dirPath);
+      if (!abstractFile) {
+        // 目录不存在，不需要手动创建
+        // Obsidian 会在创建文件时自动创建
+        console.log('目录将自动创建:', dirPath);
       }
     } catch (error) {
-      // 目录可能已存在或 Vault API 不支持，忽略错误
+      // 忽略错误
     }
   }
 

@@ -39,6 +39,13 @@ export class ImageGenerator {
     this.historyManager.updateSettings(settings);
   }
 
+  /**
+   * 获取历史管理器
+   */
+  getHistoryManager(): HistoryManager {
+    return this.historyManager;
+  }
+
   async generateImage(
     prompt: string,
     model?: ModelType,
@@ -175,6 +182,11 @@ export function createImageGenerator(
   const apiClient = new GLMApiClient(apiKey);
   const downloader = new ImageDownloader(vault, savePath, maxRetries);
   const historyManager = new HistoryManager(vault, historyPath, settings);
+
+  // 初始化历史记录（异步执行，不阻塞）
+  historyManager.load().catch(err => {
+    console.error('加载历史记录失败:', err);
+  });
 
   return new ImageGenerator(vault, apiClient, downloader, historyManager, settings);
 }

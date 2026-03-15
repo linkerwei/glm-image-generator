@@ -196,3 +196,173 @@ export function generateRecordId(): string {
 export function getTodayDate(): string {
   return new Date().toISOString().split('T')[0];
 }
+
+// ========== 批量生成相关类型 ==========
+
+/**
+ * 批量任务全局配置(YAML Frontmatter)
+ */
+export interface BatchConfig {
+  /** 使用的模型,默认 'glm-image' */
+  model?: ModelType;
+  /** 分辨率,默认 '1280x1280' */
+  resolution?: string;
+  /** 是否自动插入结果,默认 true */
+  auto_insert?: boolean;
+}
+
+/**
+ * 单个任务参数覆盖(HTML 注释)
+ */
+export interface TaskOverrideParams {
+  model?: ModelType;
+  resolution?: string;
+}
+
+/**
+ * 单个批量任务
+ */
+export interface BatchTask {
+  /** 任务 ID */
+  id: string;
+  /** 提示词内容 */
+  prompt: string;
+  /** 使用的模型(可能被覆盖) */
+  model: ModelType;
+  /** 分辨率(可能被覆盖) */
+  resolution: string;
+  /** 在文件中的行号(0-based) */
+  lineNumber: number;
+  /** 任务状态 */
+  status: 'pending' | 'generating' | 'success' | 'failed';
+  /** 生成结果(成功时) */
+  result?: {
+    localPath: string;
+    remoteUrl?: string;
+  };
+  /** 错误信息(失败时) */
+  error?: string;
+  /** 重试次数 */
+  retryCount: number;
+}
+
+/**
+ * 解析后的批量任务文件
+ */
+export interface ParsedBatchFile {
+  /** 全局配置 */
+  config: BatchConfig;
+  /** 任务列表 */
+  tasks: BatchTask[];
+  /** 原始文件内容 */
+  originalContent: string;
+  /** 源文件对象 */
+  sourceFile: any; // TFile 类型
+}
+
+/**
+ * 批量生成进度
+ */
+export interface BatchProgress {
+  /** 当前任务索引(1-based) */
+  current: number;
+  /** 总任务数 */
+  total: number;
+  /** 当前正在处理的任务 */
+  currentTask?: BatchTask;
+  /** 已成功数量 */
+  successCount: number;
+  /** 已失败数量 */
+  failedCount: number;
+}
+
+/**
+ * 批量生成结果
+ */
+export interface BatchResult {
+  /** 批量任务 ID */
+  batchId: string;
+  /** 源文件路径 */
+  sourceFilePath: string;
+  /** 总任务数 */
+  totalCount: number;
+  /** 成功数量 */
+  successCount: number;
+  /** 失败数量 */
+  failedCount: number;
+  /** 总成本(元) */
+  totalCost: number;
+  /** 任务详情 */
+  tasks: BatchTask[];
+  /** 开始时间 */
+  startTime: string;
+  /** 结束时间 */
+  endTime: string;
+  /** 执行状态 */
+  status: 'completed' | 'partial_completed' | 'failed';
+}
+
+/**
+ * 批量生成历史记录
+ */
+export interface BatchHistoryRecord {
+  /** 记录 ID */
+  id: string;
+  /** 类型标识 */
+  type: 'batch';
+  /** 执行时间 */
+  timestamp: string;
+  /** 源文件路径 */
+  sourceFile: string;
+  /** 总任务数 */
+  totalTasks: number;
+  /** 成功数量 */
+  successCount: number;
+  /** 失败数量 */
+  failedCount: number;
+  /** 总成本 */
+  totalCost: number;
+  /** 任务详情 */
+  tasks: Array<{
+    prompt: string;
+    status: 'success' | 'failed';
+    localPath?: string;
+    error?: string;
+  }>;
+}
+
+// ========== 批量生成工具函数 ==========
+
+/**
+ * 检查分辨率字符串是否有效(格式: WxH)
+ */
+export function isValidResolutionString(resolution: string): boolean {
+  const match = resolution.match(/^(\d+)x(\d+)$/);
+  if (!match) return false;
+
+  const width = parseInt(match[1], 10);
+  const height = parseInt(match[2], 10);
+
+  return isValidResolution(width, height);
+}
+
+/**
+ * 解析分辨率字符串
+ */
+export function parseResolution(resolution: string): { width: number; height: number } {
+  const [width, height] = resolution.split('x').map(s => parseInt(s, 10));
+  return { width, height };
+}
+
+/**
+ * 合并全局配置和任务参数覆盖
+ */
+export function mergeTaskParams(
+  globalConfig: BatchConfig,
+  override?: TaskOverrideParams
+): { model: ModelType; resolution: string } {
+  return {
+    model: override?.model || globalConfig.model || 'glm-image',
+    resolution: override?.resolution || globalConfig.resolution || '1280x1280',
+  };
+}
